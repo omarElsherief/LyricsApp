@@ -1,82 +1,120 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { geniusFetch, fetchLyrics } from '../api';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { geniusFetch, fetchLyrics, checkSavedSong, saveSong, deleteSavedSong } from '../api';
 
 export default function SongPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [song, setSong] = useState(null);
+  const location = useLocation();
+  const initialSong = location.state?.song;
+  
+  const [song, setSong] = useState(initialSong || null);
   const [lyrics, setLyrics] = useState(null);
   const [loadingSong, setLoadingSong] = useState(true);
   const [loadingLyrics, setLoadingLyrics] = useState(false);
   const [lyricsError, setLyricsError] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
 
-  // Check saved status on load
-  useEffect(() => {
-    if (song) {
-      const saved = JSON.parse(localStorage.getItem('lyriq_saved_songs')) || [];
-      setIsSaved(saved.some(s => s.id === song.id));
-    }
-  }, [song]);
-
-  const toggleSave = () => {
-    if (!song) return;
-    const saved = JSON.parse(localStorage.getItem('lyriq_saved_songs')) || [];
-    let updated;
-    
-    if (isSaved) {
-      updated = saved.filter(s => s.id !== song.id);
-    } else {
-      updated = [{
-        id: song.id,
-        title: song.title,
-        artist: song.primary_artist?.name,
-        art: song.song_art_image_thumbnail_url
-      }, ...saved];
-    }
-    
-    localStorage.setItem('lyriq_saved_songs', JSON.stringify(updated));
-    setIsSaved(!isSaved);
-    window.dispatchEvent(new Event('storage'));
-  };
-
-  // Fetch song details
+  // Fetch song details + check saved status
   useEffect(() => {
     let cancelled = false;
-    setLoadingSong(true);
-    setSong(null);
+    setLoadingSong(!initialSong); // Don't show full page loader if we have initial state
     setLyrics(null);
     setLyricsError(null);
+    setIsSaved(false);
 
-    geniusFetch(`/songs/${id}`)
-      .then((data) => {
+    async function loadData() {
+      try {
+        // 1. Immediately check if it's saved in DB (this is extremely fast)
+        const { saved, songData } = await checkSavedSong(id).catch(() => ({ saved: false, songData: null }));
         if (cancelled) return;
-        const s = data.response?.song;
-        setSong(s);
-        setLoadingSong(false);
+        setIsSaved(saved);
 
-        // Now fetch lyrics
-        if (s) {
-          setLoadingLyrics(true);
-          fetchLyrics(s.primary_artist?.name, s.title)
-            .then((l) => {
-              if (!cancelled) setLyrics(l);
-            })
-            .catch(() => {
-              if (!cancelled) setLyricsError('Lyrics not available for this song.');
-            })
-            .finally(() => {
-              if (!cancelled) setLoadingLyrics(false);
-            });
+        if (saved && songData) {
+          // It's saved! We have everything we need, no network calls required.
+          setSong({
+            id: songData.id,
+            title: songData.title,
+            primary_artist: { name: songData.artist },
+            song_art_image_url: songData.album_art,
+            song_art_image_thumbnail_url: songData.album_art
+          });
+          setLoadingSong(false);
+          if (songData.lyrics) {
+            setLyrics(songData.lyrics);
+            return; // We are fully loaded from local DB!
+          }
         }
-      })
-      .catch(() => {
-        if (!cancelled) setLoadingSong(false);
-      });
 
+        // 2. If we aren't fully loaded, we need to fetch. 
+        // We can do geniusFetch and fetchLyrics in parallel if we know the artist/title!
+        const fetchTitle = songData?.title || initialSong?.title;
+        const fetchArtist = songData?.artist || initialSong?.primary_artist?.name;
+        
+        let lyricsPromise = null;
+        if (fetchTitle && fetchArtist) {
+          setLoadingLyrics(true);
+          lyricsPromise = fetchLyrics(fetchArtist, fetchTitle)
+            .then(l => { if (!cancelled) setLyrics(l); })
+            .catch(() => { if (!cancelled) setLyricsError('Lyrics not available for this song.'); })
+            .finally(() => { if (!cancelled) setLoadingLyrics(false); });
+        }
+
+        // We still fetch Genius data to get high-res art and exact details
+        const geniusPromise = geniusFetch(`/songs/${id}`)
+          .then(data => {
+            if (cancelled) return;
+            const s = data.response?.song;
+            if (s) {
+              setSong(s);
+              setLoadingSong(false);
+              
+              // If we didn't start the lyrics promise above because we lacked state, start it now
+              if (!lyricsPromise) {
+                setLoadingLyrics(true);
+                fetchLyrics(s.primary_artist?.name, s.title)
+                  .then(l => { if (!cancelled) setLyrics(l); })
+                  .catch(() => { if (!cancelled) setLyricsError('Lyrics not available for this song.'); })
+                  .finally(() => { if (!cancelled) setLoadingLyrics(false); });
+              }
+            }
+          })
+          .catch(() => { if (!cancelled) setLoadingSong(false); });
+
+        await Promise.all([lyricsPromise, geniusPromise]);
+      } catch (err) {
+        if (!cancelled) setLoadingSong(false);
+      }
+    }
+
+    loadData();
     return () => { cancelled = true; };
   }, [id]);
+
+  const toggleSave = async () => {
+    if (!song || saveLoading) return;
+    setSaveLoading(true);
+    try {
+      if (isSaved) {
+        await deleteSavedSong(song.id);
+        setIsSaved(false);
+      } else {
+        await saveSong({
+          id: song.id,
+          title: song.title,
+          artist: song.primary_artist?.name,
+          albumArt: song.song_art_image_thumbnail_url,
+          lyrics: lyrics || null,
+        });
+        setIsSaved(true);
+      }
+    } catch (err) {
+      console.error('Save toggle failed:', err);
+    } finally {
+      setSaveLoading(false);
+    }
+  };
 
   if (loadingSong) {
     return (
@@ -115,13 +153,14 @@ export default function SongPage() {
           <span className="song-header-label">Song</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
             <h1 className="song-header-title" style={{ marginBottom: 0 }}>{song.title}</h1>
-            <button 
-              className={`save-btn ${isSaved ? 'saved' : ''}`}
+            <button
+              className={`save-btn ${isSaved ? 'saved' : ''} ${saveLoading ? 'saving' : ''}`}
               onClick={toggleSave}
-              title={isSaved ? "Remove from saved" : "Save song"}
-              aria-label={isSaved ? "Remove from saved" : "Save song"}
+              disabled={saveLoading}
+              title={isSaved ? 'Remove from saved' : 'Save song'}
+              aria-label={isSaved ? 'Remove from saved' : 'Save song'}
             >
-              {isSaved ? '♥' : '♡'}
+              {saveLoading ? '…' : isSaved ? '♥' : '♡'}
             </button>
           </div>
           <p
@@ -129,9 +168,7 @@ export default function SongPage() {
             onClick={() => navigate(`/artist/${song.primary_artist?.id}`)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) =>
-              e.key === 'Enter' && navigate(`/artist/${song.primary_artist?.id}`)
-            }
+            onKeyDown={(e) => e.key === 'Enter' && navigate(`/artist/${song.primary_artist?.id}`)}
             id="song-artist-link"
           >
             {song.primary_artist?.name}

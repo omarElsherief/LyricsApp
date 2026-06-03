@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { geniusFetch } from '../api';
+import SongCard from '../components/SongCard';
 
 export default function ArtistPage() {
   const { id } = useParams();
@@ -62,7 +63,7 @@ export default function ArtistPage() {
 
   // Extract albums from top songs
   useEffect(() => {
-    if (songs.length === 0 || albums.length > 0 || loadingAlbums) return;
+    if (songs.length === 0 || albums.length > 0) return;
     
     let cancelled = false;
     setLoadingAlbums(true);
@@ -90,8 +91,10 @@ export default function ArtistPage() {
       setLoadingAlbums(false);
     });
 
-    return () => { cancelled = true; };
-  }, [songs, albums.length, loadingAlbums]);
+    return () => { 
+      cancelled = true; 
+    };
+  }, [songs, albums.length]);
 
   if (loading) {
     return (
@@ -182,27 +185,10 @@ export default function ArtistPage() {
         <h2 className="artist-songs-heading">Popular Songs</h2>
         <div className="artist-songs-list">
           {songs.map((song, i) => (
-            <div
+            <SongCard
               key={song.id}
-              className="song-card"
-              onClick={() => navigate(`/song/${song.id}`)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && navigate(`/song/${song.id}`)}
-              id={`artist-song-${song.id}`}
-            >
-              <img
-                className="song-card-art"
-                src={song.song_art_image_thumbnail_url}
-                alt=""
-                loading="lazy"
-              />
-              <div className="song-card-info">
-                <div className="song-card-title">{song.title}</div>
-                <div className="song-card-artist">{song.primary_artist?.name}</div>
-              </div>
-              <span className="song-card-arrow" aria-hidden="true">→</span>
-            </div>
+              song={song}
+            />
           ))}
 
           {loadingSongs && (

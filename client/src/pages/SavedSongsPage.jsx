@@ -1,33 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getSavedSongs, deleteSavedSong } from '../api';
 
 export default function SavedSongsPage() {
   const navigate = useNavigate();
   const [savedSongs, setSavedSongs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const loadSaved = () => {
-      try {
-        const saved = JSON.parse(localStorage.getItem('lyriq_saved_songs')) || [];
-        setSavedSongs(saved);
-      } catch (err) {
-        console.error('Failed to load saved songs:', err);
-      }
-    };
-    loadSaved();
-    
-    // Optional: listen for storage events if we want multi-tab sync
-    window.addEventListener('storage', loadSaved);
-    return () => window.removeEventListener('storage', loadSaved);
+  const loadSaved = useCallback(async () => {
+    try {
+      setError(null);
+      const songs = await getSavedSongs();
+      setSavedSongs(songs);
+    } catch (err) {
+      console.error('Failed to load saved songs:', err);
+      setError('Could not load saved songs. Is the server running?');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const removeSong = (e, id) => {
+  useEffect(() => {
+    loadSaved();
+  }, [loadSaved]);
+
+  const removeSong = async (e, id) => {
     e.stopPropagation();
-    const updated = savedSongs.filter(s => s.id !== id);
-    setSavedSongs(updated);
-    localStorage.setItem('lyriq_saved_songs', JSON.stringify(updated));
-    // Dispatch custom event for same-tab updates
-    window.dispatchEvent(new Event('storage'));
+    // Optimistically remove from UI
+    setSavedSongs((prev) => prev.filter((s) => String(s.id) !== String(id)));
+    try {
+      await deleteSavedSong(id);
+    } catch (err) {
+      console.error('Failed to delete saved song:', err);
+      // Re-fetch to restore state if delete failed
+      loadSaved();
+    }
   };
 
   return (
@@ -37,29 +45,49 @@ export default function SavedSongsPage() {
           Saved <span>Songs</span>
         </h1>
 
-        {savedSongs.length > 0 ? (
+        {loading && (
+          <div className="loading-container">
+            <div className="loading-spinner" />
+            <span className="loading-text">Loading saved songs…</span>
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="empty-state">
+            <div className="empty-state-icon">⚠</div>
+            <p className="empty-state-text">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && savedSongs.length > 0 && (
           <div className="results-list">
             {savedSongs.map((song, i) => (
               <div
                 key={song.id}
                 className="song-card fade-in"
                 style={{ animationDelay: `${i * 40}ms` }}
-                onClick={() => navigate(`/song/${song.id}`)}
+                onClick={() => navigate(`/song/${song.id}`, { 
+                  state: { song: { title: song.title, primary_artist: { name: song.artist }, song_art_image_thumbnail_url: song.album_art } } 
+                })}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && navigate(`/song/${song.id}`)}
+                onKeyDown={(e) => e.key === 'Enter' && navigate(`/song/${song.id}`, {
+                  state: { song: { title: song.title, primary_artist: { name: song.artist }, song_art_image_thumbnail_url: song.album_art } } 
+                })}
               >
-                <img
-                  className="song-card-art"
-                  src={song.art}
-                  alt=""
-                  loading="lazy"
-                />
+                {song.album_art && (
+                  <img
+                    className="song-card-art"
+                    src={song.album_art}
+                    alt=""
+                    loading="lazy"
+                  />
+                )}
                 <div className="song-card-info">
                   <div className="song-card-title">{song.title}</div>
                   <div className="song-card-artist">{song.artist}</div>
                 </div>
-                <button 
+                <button
                   className="save-btn remove-btn"
                   onClick={(e) => removeSong(e, song.id)}
                   title="Remove from saved"
@@ -70,11 +98,13 @@ export default function SavedSongsPage() {
               </div>
             ))}
           </div>
-        ) : (
+        )}
+
+        {!loading && !error && savedSongs.length === 0 && (
           <div className="empty-state">
             <div className="empty-state-icon">♥</div>
             <p className="empty-state-text">
-              You haven't saved any songs yet.<br/>
+              You haven't saved any songs yet.<br />
               Explore and click the heart icon on a song page to save it.
             </p>
           </div>

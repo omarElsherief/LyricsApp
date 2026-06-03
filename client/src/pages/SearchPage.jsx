@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { geniusFetch } from '../api';
+import SongCard from '../components/SongCard';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [artistResults, setArtistResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const inputRef = useRef(null);
@@ -34,10 +36,22 @@ export default function SearchPage() {
     try {
       const data = await geniusFetch(`/search?q=${encodeURIComponent(q)}`);
       const hits = data.response?.hits || [];
-      setResults(hits.map((h) => h.result));
+      const songs = hits.map((h) => h.result);
+      
+      // Extract unique artists
+      const artistsMap = new Map();
+      songs.forEach(s => {
+        if (s.primary_artist && !artistsMap.has(s.primary_artist.id)) {
+          artistsMap.set(s.primary_artist.id, s.primary_artist);
+        }
+      });
+      
+      setArtistResults(Array.from(artistsMap.values()).slice(0, 3)); // Top 3 artists
+      setResults(songs);
     } catch (err) {
       console.error('Search failed:', err);
       setResults([]);
+      setArtistResults([]);
     } finally {
       setLoading(false);
     }
@@ -92,35 +106,44 @@ export default function SearchPage() {
           </div>
         )}
 
-        {!loading && results.length > 0 && (
+        {!loading && (results.length > 0 || artistResults.length > 0) && (
           <>
-            <h2 className="results-heading">
-              {results.length} result{results.length !== 1 ? 's' : ''}
-            </h2>
+            {artistResults.length > 0 && (
+              <div style={{ marginBottom: '40px' }}>
+                <h2 className="results-heading">Artists</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '16px' }}>
+                  {artistResults.map((artist, i) => (
+                    <div 
+                      key={artist.id}
+                      className="album-card fade-in"
+                      style={{ animationDelay: `${i * 40}ms`, cursor: 'pointer', textAlign: 'center' }}
+                      onClick={() => navigate(`/artist/${artist.id}`)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && navigate(`/artist/${artist.id}`)}
+                      onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+                      onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                      <img 
+                        src={artist.image_url} 
+                        alt={artist.name} 
+                        style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: '50%', marginBottom: '8px', boxShadow: 'var(--shadow-sm)' }} 
+                      />
+                      <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{artist.name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <h2 className="results-heading">Songs</h2>
             <div className="results-list">
               {results.map((song, i) => (
-                <div
+                <SongCard
                   key={song.id}
-                  className={`song-card fade-in`}
+                  song={song}
                   style={{ animationDelay: `${i * 40}ms` }}
-                  onClick={() => navigate(`/song/${song.id}`)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && navigate(`/song/${song.id}`)}
-                  id={`song-result-${song.id}`}
-                >
-                  <img
-                    className="song-card-art"
-                    src={song.song_art_image_thumbnail_url}
-                    alt=""
-                    loading="lazy"
-                  />
-                  <div className="song-card-info">
-                    <div className="song-card-title">{song.title}</div>
-                    <div className="song-card-artist">{song.primary_artist?.name}</div>
-                  </div>
-                  <span className="song-card-arrow" aria-hidden="true">→</span>
-                </div>
+                />
               ))}
             </div>
           </>

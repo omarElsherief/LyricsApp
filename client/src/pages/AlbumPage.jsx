@@ -97,10 +97,14 @@ export default function AlbumPage() {
               <div
                 key={track.song.id}
                 className="song-card"
-                onClick={() => navigate(`/song/${track.song.id}`)}
+                onClick={() => navigate(`/song/${track.song.id}`, {
+                  state: { song: { title: track.song.title, primary_artist: { name: track.song.primary_artist?.name || album.artist?.name }, song_art_image_thumbnail_url: album.cover_art_url } }
+                })}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && navigate(`/song/${track.song.id}`)}
+                onKeyDown={(e) => e.key === 'Enter' && navigate(`/song/${track.song.id}`, {
+                  state: { song: { title: track.song.title, primary_artist: { name: track.song.primary_artist?.name || album.artist?.name }, song_art_image_thumbnail_url: album.cover_art_url } }
+                })}
                 style={{ padding: '12px 16px' }}
               >
                 <div style={{ color: 'var(--color-text-tertiary)', width: '24px', fontSize: '0.85rem' }}>
