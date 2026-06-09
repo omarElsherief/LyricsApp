@@ -74,3 +74,30 @@ export async function checkSavedSong(id) {
   const found = all.find(s => String(s.id) === String(id));
   return { saved: !!found, songData: found || null };
 }
+
+// ─── Custom Lyrics ────────────────────────────────────────────────────────────
+
+/**
+ * Fetch custom lyrics from the backend.
+ * @param {string|number} songId 
+ */
+export async function getCustomLyrics(songId) {
+  const res = await fetch(`${API_BASE}/api/lyrics/${songId}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Failed to load custom lyrics');
+  const data = await res.json();
+  return data.lyrics;
+}
+
+/**
+ * Save custom lyrics to the backend.
+ */
+export async function saveCustomLyrics({ songId, title, artist, lyrics }) {
+  const res = await fetch(`${API_BASE}/api/lyrics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ songId, title, artist, lyrics }),
+  });
+  if (!res.ok) throw new Error('Failed to save custom lyrics');
+  return res.json();
+}

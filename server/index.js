@@ -23,7 +23,15 @@ db.exec(`
     album_art TEXT,
     lyrics   TEXT,
     saved_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
+  );
+  
+  CREATE TABLE IF NOT EXISTS custom_lyrics (
+    song_id  TEXT PRIMARY KEY,
+    title    TEXT,
+    artist   TEXT,
+    lyrics   TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
@@ -76,6 +84,45 @@ app.delete('/api/saved/:id', (req, res) => {
   } catch (err) {
     console.error('DELETE /api/saved error:', err.message);
     res.status(500).json({ error: 'Failed to delete saved song' });
+  }
+});
+
+// ─── Custom Lyrics endpoints ──────────────────────────────────────────────────
+
+// GET /api/lyrics/:songId — return custom lyrics if exists
+app.get('/api/lyrics/:songId', (req, res) => {
+  try {
+    const row = db.prepare('SELECT lyrics FROM custom_lyrics WHERE song_id = ?').get(req.params.songId);
+    if (row) {
+      res.json({ lyrics: row.lyrics });
+    } else {
+      res.status(404).json({ error: 'Not found' });
+    }
+  } catch (err) {
+    console.error('GET /api/lyrics error:', err.message);
+    res.status(500).json({ error: 'Failed to get custom lyrics' });
+  }
+});
+
+// POST /api/lyrics — save custom lyrics
+app.post('/api/lyrics', (req, res) => {
+  const { songId, title, artist, lyrics } = req.body;
+  if (!songId || !lyrics) return res.status(400).json({ error: 'Missing songId or lyrics' });
+
+  try {
+    db.prepare(`
+      INSERT INTO custom_lyrics (song_id, title, artist, lyrics)
+      VALUES (@songId, @title, @artist, @lyrics)
+      ON CONFLICT(song_id) DO UPDATE SET
+        title  = excluded.title,
+        artist = excluded.artist,
+        lyrics = excluded.lyrics
+    `).run({ songId: String(songId), title, artist, lyrics });
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/lyrics error:', err.message);
+    res.status(500).json({ error: 'Failed to save custom lyrics' });
   }
 });
 

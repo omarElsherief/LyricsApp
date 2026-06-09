@@ -6,6 +6,7 @@ A minimalist, high-performance web application for searching and exploring song 
 
 - **Global Search:** Search for any song or artist. Artists are intelligently extracted and grouped from song hits.
 - **Read Lyrics:** High-quality, accurately synced and plain lyrics provided by the open-source `lrclib.net` database.
+- **Custom Lyrics:** If lyrics aren't found online, manually add and save your own custom lyrics locally.
 - **Artist Profiles:** View an artist's biography, top songs, and top albums seamlessly.
 - **Album Explorer:** Dive into specific albums, view their high-res covers, release years, and full tracklists.
 - **Save Favorites (Instant Load):** Bookmark your favorite songs. Saved songs and their lyrics are stored in a backend SQLite database, enabling **instant, 0-latency loading** when you reopen them—completely bypassing external APIs.
@@ -60,6 +61,7 @@ lyrics-app/
 1. **The Genius Proxy (`/api/genius`):** The Genius API requires an access token and often blocks direct browser requests (CORS). The Express server at `server/index.js` acts as a proxy, securely attaching the `GENIUS_API_KEY` and forwarding requests from the React client.
 2. **Lrclib Fetching:** Lyrics are fetched client-side directly from `https://lrclib.net/api/get` using the artist name and track title.
 3. **Saved Songs DB (`/api/saved`):** When a user clicks "Save" on a `<SongCard />` or `SongPage.jsx`, the client fetches the lyrics and sends the complete payload to the backend, which upserts it into `lyrics.db`. When that song is clicked again, `SongPage.jsx` checks the DB first and renders instantly without hitting Genius or Lrclib.
+4. **Custom Lyrics (`/api/lyrics`):** A secondary local fallback. When `lrclib.net` has no lyrics for a track, users are prompted to manually add them via a modal. The text is securely stored in the `custom_lyrics` table of `lyrics.db`.
 
 ## 🏁 Getting Started
 
@@ -100,4 +102,5 @@ The app will be available at `http://localhost:5173`.
 - **v1.2.0:** Migrated lyrics fetching logic from `lyrics.ovh` to the more reliable `lrclib.net`.
 - **v1.3.0:** Added Artist Profiles and Album explorers.
 - **v1.4.0 (Performance & DB):** Replaced `localStorage` with a robust `better-sqlite3` backend. Implemented parallel network fetching and React Router state passing to eliminate sequential loading waterfalls.
-- **v1.4.1 (UX Polish):** Added inline save functionality directly to `SongCard.jsx`, allowing users to bookmark directly from search results. Extracted artists into global search. Updated lyrics typography for maximum readability.
+- **v1.4.1 (UX Polish):** Added inline save functionality directly to `SongCard.jsx`, allowing users to bookmark directly from search results. Extracted artists into global search. Fixed React Strict Mode race conditions on album fetching. Added SQLite db to `.gitignore`.
+- **v1.5.0 (Custom Lyrics):** Implemented a custom lyrics fallback system. Added an "Add Lyrics" modal to `SongPage.jsx` when external APIs fail, storing user-submitted lyrics in the backend SQLite `custom_lyrics` table.

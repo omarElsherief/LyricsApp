@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { geniusFetch, fetchLyrics, checkSavedSong, saveSong, deleteSavedSong } from '../api';
+import { geniusFetch, fetchLyrics, checkSavedSong, saveSong, deleteSavedSong, getCustomLyrics, saveCustomLyrics } from '../api';
 
 export default function SongPage() {
   const { id } = useParams();
@@ -15,6 +15,11 @@ export default function SongPage() {
   const [lyricsError, setLyricsError] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
+
+  // Custom lyrics modal state
+  const [showAddLyricsModal, setShowAddLyricsModal] = useState(false);
+  const [customLyricsInput, setCustomLyricsInput] = useState('');
+  const [savingCustomLyrics, setSavingCustomLyrics] = useState(false);
 
   // Fetch song details + check saved status
   useEffect(() => {
@@ -57,7 +62,20 @@ export default function SongPage() {
           setLoadingLyrics(true);
           lyricsPromise = fetchLyrics(fetchArtist, fetchTitle)
             .then(l => { if (!cancelled) setLyrics(l); })
-            .catch(() => { if (!cancelled) setLyricsError('Lyrics not available for this song.'); })
+            .catch(async () => { 
+              if (cancelled) return;
+              try {
+                const custom = await getCustomLyrics(id);
+                if (custom && !cancelled) {
+                  setLyrics(custom);
+                  setLyricsError(null);
+                } else if (!cancelled) {
+                  setLyricsError('Lyrics not available for this song.');
+                }
+              } catch (e) {
+                if (!cancelled) setLyricsError('Lyrics not available for this song.');
+              }
+            })
             .finally(() => { if (!cancelled) setLoadingLyrics(false); });
         }
 
@@ -75,7 +93,20 @@ export default function SongPage() {
                 setLoadingLyrics(true);
                 fetchLyrics(s.primary_artist?.name, s.title)
                   .then(l => { if (!cancelled) setLyrics(l); })
-                  .catch(() => { if (!cancelled) setLyricsError('Lyrics not available for this song.'); })
+                  .catch(async () => {
+                    if (cancelled) return;
+                    try {
+                      const custom = await getCustomLyrics(s.id);
+                      if (custom && !cancelled) {
+                        setLyrics(custom);
+                        setLyricsError(null);
+                      } else if (!cancelled) {
+                        setLyricsError('Lyrics not available for this song.');
+                      }
+                    } catch (e) {
+                      if (!cancelled) setLyricsError('Lyrics not available for this song.');
+                    }
+                  })
                   .finally(() => { if (!cancelled) setLoadingLyrics(false); });
               }
             }
@@ -113,6 +144,27 @@ export default function SongPage() {
       console.error('Save toggle failed:', err);
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  const handleSaveCustomLyrics = async () => {
+    if (!customLyricsInput.trim() || !song || savingCustomLyrics) return;
+    setSavingCustomLyrics(true);
+    try {
+      await saveCustomLyrics({
+        songId: song.id,
+        title: song.title,
+        artist: song.primary_artist?.name,
+        lyrics: customLyricsInput.trim()
+      });
+      setLyrics(customLyricsInput.trim());
+      setLyricsError(null);
+      setShowAddLyricsModal(false);
+    } catch (err) {
+      console.error('Failed to save custom lyrics:', err);
+      alert('Failed to save custom lyrics. Please try again.');
+    } finally {
+      setSavingCustomLyrics(false);
     }
   };
 
@@ -187,8 +239,17 @@ export default function SongPage() {
           </div>
         )}
 
-        {!loadingLyrics && lyricsError && (
-          <p className="error-message">{lyricsError}</p>
+        {!loadingLyrics && lyricsError && !lyrics && (
+          <div className="error-message">
+            <p>{lyricsError}</p>
+            <button 
+              className="btn-primary fade-in" 
+              onClick={() => { setCustomLyricsInput(''); setShowAddLyricsModal(true); }}
+              style={{ marginTop: '16px' }}
+            >
+              Add Lyrics
+            </button>
+          </div>
         )}
 
         {!loadingLyrics && lyrics && (
@@ -197,6 +258,38 @@ export default function SongPage() {
           </div>
         )}
       </section>
+
+      {/* Add Lyrics Modal */}
+      {showAddLyricsModal && (
+        <div className="modal-overlay fade-in">
+          <div className="modal-content">
+            <h3 style={{ marginBottom: '16px', fontSize: '1.2rem' }}>Add Custom Lyrics</h3>
+            <textarea
+              className="lyrics-textarea"
+              placeholder="Paste lyrics here..."
+              value={customLyricsInput}
+              onChange={(e) => setCustomLyricsInput(e.target.value)}
+              disabled={savingCustomLyrics}
+            />
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button 
+                onClick={() => setShowAddLyricsModal(false)}
+                disabled={savingCustomLyrics}
+                style={{ padding: '8px 16px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn-primary"
+                onClick={handleSaveCustomLyrics}
+                disabled={savingCustomLyrics || !customLyricsInput.trim()}
+              >
+                {savingCustomLyrics ? 'Saving...' : 'Save Lyrics'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
